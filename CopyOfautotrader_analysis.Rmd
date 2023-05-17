@@ -1,0 +1,179 @@
+---
+title: "R Notebook"
+output: html_notebook
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+install.packages(c("dplyr", "ggplot2", "tidyr"))
+library(dplyr)
+library(ggplot2)
+library(readr)
+library(scales)
+library(readr)
+library(tidyr)
+autotrader_df <- read_csv("~/projects/autotrader_scraper/autotrader-df.csv", 
+    col_types = cols(engine = col_character()))
+View(autotrader_df)
+
+dim(autotrader_df)
+
+
+```
+
+# some tables
+
+```{r}
+autotrader_df %>% 
+    mutate(connect = grepl("connect", tolower(subtitle))) %>% 
+    mutate(premium = grepl("premium", tolower(subtitle)) & !grepl("se", tolower(subtitle))) %>% 
+    mutate(premium_se = grepl("premium", tolower(subtitle)) & grepl("se ", tolower(subtitle))) %>% 
+    filter(model == "Hyundai Ioniq") %>% 
+    count(subtitle, connect, premium, premium_se) %>% 
+    View()
+```
+
+```{r}
+autotrader_df %>% 
+    mutate(connect = grepl("connect", tolower(subtitle))) %>% 
+    mutate(premium = grepl("premium", tolower(subtitle)) & !grepl("se", tolower(subtitle))) %>% 
+    mutate(premium_se = grepl("premium", tolower(subtitle)) & grepl("se ", tolower(subtitle))) %>% 
+    # slightly round-about way to long-format the trim, any better way I can think of?
+    pivot_longer(cols = c(connect, premium, premium_se), names_to = "trim", values_to = "value") %>% 
+    filter(value == TRUE) %>% 
+    select(-value) %>% 
+    filter(model == "Hyundai Ioniq") %>% 
+    filter(!is.na(year),
+           year <= 2021,
+           fuel == "Petrol Hybrid") %>% 
+    mutate(year = as.character(year)) %>% 
+    ggplot(aes(y = price, x = mileage, color = trim)) +
+    geom_point() +
+    geom_smooth(method = "lm", se = FALSE) +  # Add a trend line
+    facet_wrap( ~ year, ncol = 5) +
+    scale_y_continuous(labels = comma, name = "Price (GBP)") +
+    scale_x_continuous(labels = comma, name = "Mileage (miles)") +
+    labs(title = "Hyundai Ioniq (HEV) price by mileage, trim and year")
+    
+```
+
+
+```{r}
+autotrader_df %>% 
+    filter(fuel %in% c("Petrol Hybrid", "Petrol Plug-in Hybrid", "Electric")) %>% 
+    count(model, fuel, sort=TRUE)
+
+
+models <- autotrader_df %>% 
+    filter(fuel %in% c("Petrol Hybrid", "Petrol Plug-in Hybrid", "Electric")) %>% 
+    count(model, fuel, sort=TRUE) %>% 
+    .$model
+
+models_hev <- autotrader_df %>% 
+    filter(fuel %in% c("Petrol Hybrid")) %>% 
+    count(model, fuel, sort=TRUE) %>% 
+    .$model
+
+```
+
+# HEV model comparison
+
+```{r}
+autotrader_df %>%
+    filter(model %in% models_hev) %>%
+    filter(fuel == "Petrol Hybrid") %>% 
+    mutate(year = as.character(year)) %>% 
+    filter(!is.na(year)) %>% 
+    ggplot(aes(y = price, x = mileage, color = year)) +
+    geom_point() +
+    geom_smooth(method = "lm", se = FALSE) +  # Add a trend line
+    facet_wrap( ~ model, ncol = 3) +
+    scale_y_continuous(labels = comma, name = "Price (GBP)") +
+    scale_x_continuous(labels = comma, name = "Mileage (miles)") +
+    labs(title = "Car price by mileage, year and model type")
+
+autotrader_df %>%
+    filter(distance < 10) %>% 
+    filter(year >= 2019) %>% 
+    filter(model %in% models_hev) %>%
+    filter(fuel == "Petrol Hybrid") %>% 
+    mutate(year = as.character(year)) %>% 
+    filter(!is.na(year)) %>% 
+    ggplot(aes(y = price, x = mileage, color = year)) +
+    geom_point() +
+    geom_smooth(method = "lm", se = FALSE) +  # Add a trend line
+    facet_wrap( ~ model, ncol = 3) +
+    scale_y_continuous(labels = comma, name = "Price (GBP)") +
+    scale_x_continuous(labels = comma, name = "Mileage (miles)") +
+    labs(title = "Car price by mileage, year and model type")
+```
+
+
+```{r}
+
+# Hyundai Ioniq subtype comparison
+autotrader_df %>%
+    filter(model == "Hyundai Ioniq") %>% 
+    filter(fuel %in% c("Petrol Hybrid", "Petrol Plug-in Hybrid", "Electric")) %>% 
+    mutate(year = as.character(year)) %>% 
+    filter(!is.na(year)) %>% 
+    ggplot(aes(y = price, x = mileage, color = year)) +
+    geom_point() +
+    geom_smooth(method = "lm", se = FALSE) +  # Add a trend line
+    facet_wrap( ~ fuel, ncol = 3) +
+    scale_y_continuous(labels = comma, name = "Price (GBP)") +
+    scale_x_continuous(labels = comma, name = "Mileage (miles)") +
+    labs(title = "Hyundai Ioniq price by mileage, year and fuel type")
+
+autotrader_df %>%
+    filter(model == "Hyundai Ioniq") %>% 
+    filter(!is.na(year),
+           fuel == "Petrol Hybrid") %>% 
+    mutate(year = as.character(year)) %>% 
+    ggplot(aes(y = price, x = mileage, color = year)) +
+    geom_point() +
+    geom_smooth(method = "lm", se = FALSE) +  # Add a trend line
+    facet_wrap( ~ year, ncol = 5) +
+    scale_y_continuous(labels = comma, name = "Price (GBP)") +
+    scale_x_continuous(labels = comma, name = "Mileage (miles)") +
+    labs(title = "Hyundai Ioniq (HEV) price by mileage and year")
+
+```
+
+```{r}
+autotrader_df_corolla %>%
+    filter(!is.na(year),
+           !is.na(fuel)) %>% 
+    ggplot(aes(y = price, x = mileage, color = year)) +
+    geom_point() +
+    geom_smooth(method = "lm", se = FALSE) +  # Add a trend line
+    facet_wrap( ~ fuel, ncol = 2) +
+    scale_y_continuous(labels = comma, name = "Price (GBP)") +
+    scale_x_continuous(labels = comma, name = "Mileage (miles)") +
+    labs(title = "Toyota Corolla price by mileage, year and fuel type")
+
+autotrader_df_corolla %>%
+    filter(!is.na(year),
+           !is.na(fuel),
+           fuel == "Petrol Hybrid") %>%
+    ggplot(aes(y = price, x = mileage, color = year)) +
+    geom_point() +
+    geom_smooth(method = "lm", se = FALSE) +  # Add a trend line
+    facet_wrap( ~ year, ncol = 4) +
+    scale_y_continuous(labels = comma, name = "Price (GBP)") +
+    scale_x_continuous(labels = comma, name = "Mileage (miles)") +
+    labs(title = "Toyota Corolla price by mileage and year")
+
+autotrader_df_corolla %>%
+    filter(!is.na(year),
+           fuel == "Petrol Hybrid") %>%
+    ggplot(aes(y = price, x = mileage, color = year)) +
+    geom_point() +
+    geom_smooth(method = "lm", se = FALSE) +  # Add a trend line
+    facet_wrap( ~ owners, ncol = 5) +
+    scale_y_continuous(labels = comma, name = "Price (GBP)") +
+    scale_x_continuous(labels = comma, name = "Mileage (miles)") +
+    labs(title = "Toyota Corolla price by mileage, year and owners")
+```
+
