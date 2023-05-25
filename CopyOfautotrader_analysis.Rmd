@@ -5,8 +5,12 @@ editor_options:
   chunk_output_type: console
 ---
 
+# Introduction
+
+We need a coule of basic packages for data handling and visualisation. We will be loading our data from `csv` files, which are the outputs of our Python webscraping scripts. 
+
 ```{r}
-install.packages(c("dplyr", "ggplot2", "tidyr"))
+# install.packages(c("dplyr", "ggplot2", "tidyr"))
 library(dplyr)
 library(ggplot2)
 library(readr)
@@ -19,34 +23,46 @@ View(autotrader_df)
 
 dim(autotrader_df)
 
+corolla_df <- read_csv("~/projects/autotrader_scraper/autotrader-corolla-df.csv", 
+    col_types = cols(engine = col_character()))
+
 
 ```
 
-# some tables
+To-do for later: fetch additional information from https://cartaxcheck.co.uk/free-car-check/?vrm=SG20WGV 
+
+# some tables: Number of listings per year and trim
 
 ```{r}
+# How many of each trim do we have?
 autotrader_df %>% 
     mutate(connect = grepl("connect", tolower(subtitle))) %>% 
     mutate(premium = grepl("premium", tolower(subtitle)) & !grepl("se", tolower(subtitle))) %>% 
-    mutate(premium_se = grepl("premium", tolower(subtitle)) & grepl("se ", tolower(subtitle))) %>% 
-    filter(model == "Hyundai Ioniq") %>% 
-    count(subtitle, connect, premium, premium_se) %>% 
-    View()
-```
-
-```{r}
-autotrader_df %>% 
-    mutate(connect = grepl("connect", tolower(subtitle))) %>% 
-    mutate(premium = grepl("premium", tolower(subtitle)) & !grepl("se", tolower(subtitle))) %>% 
-    mutate(premium_se = grepl("premium", tolower(subtitle)) & grepl("se ", tolower(subtitle))) %>% 
+    mutate(premium_se = grepl("premium", tolower(subtitle)) & grepl(" se ", tolower(subtitle))) %>% 
+    mutate(first_edition = grepl("edition", tolower(subtitle)) & grepl(" edition ", tolower(subtitle))) %>% 
     # slightly round-about way to long-format the trim, any better way I can think of?
-    pivot_longer(cols = c(connect, premium, premium_se), names_to = "trim", values_to = "value") %>% 
+    pivot_longer(cols = c(connect, premium, premium_se, first_edition), names_to = "trim", values_to = "value") %>% 
+    filter(value) %>% 
+    filter(model == "Hyundai Ioniq") %>% 
+    count(trim, year) 
+```
+
+# Hyundai Ioniq HEV prices by mileage, trim and year
+
+```{r}
+autotrader_df %>% 
+    mutate(connect = grepl("connect", tolower(subtitle))) %>% 
+    mutate(premium = grepl("premium", tolower(subtitle)) & !grepl("se", tolower(subtitle))) %>% 
+    mutate(premium_se = grepl("premium", tolower(subtitle)) & grepl(" se ", tolower(subtitle))) %>% 
+    mutate(first_edition = grepl("edition", tolower(subtitle)) & grepl(" edition ", tolower(subtitle))) %>% 
+    # slightly round-about way to long-format the trim, any better way I can think of?
+    pivot_longer(cols = c(connect, premium, premium_se, first_edition), names_to = "trim", values_to = "value") %>% 
     filter(value == TRUE) %>% 
     select(-value) %>% 
     filter(model == "Hyundai Ioniq") %>% 
     filter(!is.na(year),
            year <= 2021,
-           fuel == "Petrol Hybrid") %>% 
+           fuel == "Electric") %>% 
     mutate(year = as.character(year)) %>% 
     ggplot(aes(y = price, x = mileage, color = trim)) +
     geom_point() +
@@ -55,8 +71,140 @@ autotrader_df %>%
     scale_y_continuous(labels = comma, name = "Price (GBP)") +
     scale_x_continuous(labels = comma, name = "Mileage (miles)") +
     labs(title = "Hyundai Ioniq (HEV) price by mileage, trim and year")
+
+# Price by mileage, trim, fuel and year. 
+# Note how electric prices are lower across the board, 
+# and that there are very few 1st Edition cars, and that these are priced 
+# similarly to the Premium model despite coming with a few upgrades.
+# These may present a good value. 
+
+autotrader_df %>% 
+    mutate(connect = grepl("connect", tolower(subtitle))) %>% 
+    mutate(premium = grepl("premium", tolower(subtitle)) & !grepl("se", tolower(subtitle))) %>% 
+    mutate(premium_se = grepl("premium", tolower(subtitle)) & grepl(" se ", tolower(subtitle))) %>% 
+    mutate(first_edition = grepl("edition", tolower(subtitle)) & grepl(" edition ", tolower(subtitle))) %>% 
+    # slightly round-about way to long-format the trim, any better way I can think of?
+    pivot_longer(cols = c(connect, premium, premium_se, first_edition), names_to = "trim", values_to = "value") %>% 
+    filter(value == TRUE) %>% 
+    select(-value) %>% 
+    filter(model == "Hyundai Ioniq") %>% 
+    filter(!is.na(year),
+           !trim == "connect",
+           year <= 2021,
+           fuel %in% c("Petrol Hybrid")) %>% 
+    mutate(year = as.character(year)) %>% 
+    ggplot(aes(y = price, x = mileage, color = trim)) +
+    geom_point() +
+    geom_smooth(method = "lm", se = FALSE) +  # Add a trend line
+    facet_wrap(year ~ fuel, ncol = 2) +
+    scale_y_continuous(labels = scales::label_dollar(prefix = "\u00a3"), 
+                       name = "Price") +
+    scale_x_continuous(labels = comma, name = "Mileage (miles)") +
+    labs(title = "Hyundai Ioniq 2nd hand price by mileage, trim and year")
     
 ```
+
+# Finding the best buy
+
+Compare to best results from CarShop.co.uk
+
+Based on the investigation of a manual inspection of cars on CarShop.co.uk I identified four possible buy scenarios:
+
+1. Leather seats, low mileage,
+2. Leather seats, average mileage,
+3. No leather seats, average mileage.
+
+The question is: can we find something on autotrader that is a better buy than the best of either of these options from CarShop?
+
+
+
+```{r}
+# scenario 1: leather seats, low mileage
+# conclusion: no better car in the Autotrader dataset, the only one that pops up
+# is one from the CarShop itself which costs slightly more (and has the stained seats)
+# although there is one with a slightly higher price and even lower mileage that
+# comes up (https://www.autotrader.co.uk/car-details/202303034871123)
+autotrader_df %>% 
+    mutate(connect = grepl("connect", tolower(subtitle))) %>% 
+    mutate(premium = grepl("premium", tolower(subtitle)) & !grepl("se", tolower(subtitle))) %>% 
+    mutate(premium_se = grepl("premium", tolower(subtitle)) & grepl(" se ", tolower(subtitle))) %>% 
+    mutate(first_edition = grepl("edition", tolower(subtitle)) & grepl(" edition ", tolower(subtitle))) %>% 
+    # slightly round-about way to long-format the trim, any better way I can think of?
+    pivot_longer(cols = c(connect, premium, premium_se, first_edition), names_to = "trim", values_to = "value") %>% 
+    filter(value == TRUE) %>% 
+    select(-value) %>% 
+    filter(model == "Hyundai Ioniq") %>% 
+    filter(!is.na(year),
+           trim == "premium_se",
+           price <= 21000,
+           mileage <= 30000,
+           fuel %in% c("Petrol Hybrid")) %>% 
+    mutate(year = as.character(year)) %>% 
+    select(link, year, trim, price, mileage ,fuel, seller) %>% 
+    View("scenario_1")
+```
+
+For scenario two, we are trying to beat the Premium SE car at £18350 with 42,000 miles on it (SL69FSE). 
+
+We find only one serious contender, coming in at £18,850 with slightly lower mileage (38,000) (AF69YLZ), advertised as an ex-company car, though sold in Maidenhead (163 miles away). 
+
+All other similar cars cost more, approaching the £20,000 price while still having average mileage ,making it not worth it.
+
+
+```{r}
+# scenario two: leather seats, average mileage
+autotrader_df %>% 
+    mutate(connect = grepl("connect", tolower(subtitle))) %>% 
+    mutate(premium = grepl("premium", tolower(subtitle)) & !grepl("se", tolower(subtitle))) %>% 
+    mutate(premium_se = grepl("premium", tolower(subtitle)) & grepl(" se ", tolower(subtitle))) %>% 
+    mutate(first_edition = grepl("edition", tolower(subtitle)) & grepl(" edition ", tolower(subtitle))) %>% 
+    # slightly round-about way to long-format the trim, any better way I can think of?
+    pivot_longer(cols = c(connect, premium, premium_se, first_edition), names_to = "trim", values_to = "value") %>% 
+    filter(value == TRUE) %>% 
+    select(-value) %>% 
+    filter(model == "Hyundai Ioniq") %>% 
+    filter(!is.na(year),
+           trim == "premium_se",
+           price <= 20000,
+           mileage <= 50000,
+           fuel %in% c("Petrol Hybrid")) %>% 
+    mutate(year = as.character(year)) %>% 
+    select(link, year, trim, price, mileage ,fuel, seller) %>% 
+    View("scenario_2")
+```
+
+Scenario 3: no leather seats, average mileage.
+
+Say that we don't care about the leather seats anymore. We would still not want a car with high mileage, though average mileage may be fine. We would, however, still want at least 1st Edition or Premium models, as the SE Connect model is too basic. 
+
+Here we are comparing against two best buys from the Carshop, both 1st Editions: a white one at £17,750 with a mileage of 34,000 and a black one at £17,150 with a mileage of 40,000. 
+
+We will be excluding everything over £18,000 since at that price point we could get the Premium SE with 42k miles on it. We manually inspect and find no £18,000+ fabric seats with mileage notably lower than that, which would make it worth it (in the sense of trading off leather seats against much lower mileage) hence the exclusion above this price point. We include cars with up to 50k miles to allow for cheaper ones to remain. 
+
+We see a £16,849 black Premium with 43k miles on it, but it's a 2021 model, indicating high mileage per year (EF70ZBY). This means it may have been a taxi. The dashboard and infotainment system screen also appear to have some light scratches. The £17,150 from CarShop would be a better buy. A very similar car, though in white (EF70Y0J) has the same mileage issue. Why not just get the 1st Edition from CarShop then. A whole bunch of £17,250 priced ones in Black are in fact from the Carshop and have thus already been discounted since they are not one of the two chosen ones for Scenario 3. 
+
+```{r}
+# scenario two: no leather seats, average mileage
+autotrader_df %>% 
+    mutate(connect = grepl("connect", tolower(subtitle))) %>% 
+    mutate(premium = grepl("premium", tolower(subtitle)) & !grepl("se", tolower(subtitle))) %>% 
+    mutate(premium_se = grepl("premium", tolower(subtitle)) & grepl(" se ", tolower(subtitle))) %>% 
+    mutate(first_edition = grepl("edition", tolower(subtitle)) & grepl(" edition ", tolower(subtitle))) %>% 
+    # slightly round-about way to long-format the trim, any better way I can think of?
+    pivot_longer(cols = c(connect, premium, premium_se, first_edition), names_to = "trim", values_to = "value") %>% 
+    filter(value == TRUE) %>% 
+    select(-value) %>% 
+    filter(model == "Hyundai Ioniq") %>% 
+    filter(!is.na(year),
+           trim %in% c("premium", "first_edition"),
+           price <= 18000,
+           mileage <= 50000,
+           fuel %in% c("Petrol Hybrid")) %>% 
+    mutate(year = as.character(year)) %>% 
+    select(link, year, trim, price, mileage ,fuel, seller) %>% 
+    View("scenario_3")
+```
+
 
 
 ```{r}
@@ -78,6 +226,17 @@ models_hev <- autotrader_df %>%
 ```
 
 # HEV model comparison
+
+Let us compare the price by mileage and year, but then for several makes and models. 
+
+We will be looking at:
+- Honda Civic
+- Hyundai Ioniq
+- Kia Niro
+- Toyota Corolla
+- Toyota Prius
+- Vauxhall Astra
+- Volvo XC40
 
 ```{r}
 autotrader_df %>%
@@ -109,6 +268,9 @@ autotrader_df %>%
     labs(title = "Car price by mileage, year and model type")
 ```
 
+Finally, let us look at Hyundai Ioniq prices by mileage, year and fuel type. 
+
+We can also split the HEVs by year to see how the price to mileage relationship changes depending on the year of the car. 
 
 ```{r}
 
@@ -140,6 +302,8 @@ autotrader_df %>%
     labs(title = "Hyundai Ioniq (HEV) price by mileage and year")
 
 ```
+
+# Toyota Corolla price by mileage, year and fuel type
 
 ```{r}
 autotrader_df_corolla %>%
@@ -175,5 +339,38 @@ autotrader_df_corolla %>%
     scale_y_continuous(labels = comma, name = "Price (GBP)") +
     scale_x_continuous(labels = comma, name = "Mileage (miles)") +
     labs(title = "Toyota Corolla price by mileage, year and owners")
+```
+
+# corolla analysis
+
+```{r}
+corolla_df <- read_csv("~/projects/autotrader_scraper/autotrader-corolla-df.csv", 
+    col_types = cols(engine = col_character()))
+```
+
+```{r}
+autotrader_df %>% 
+    mutate(connect = grepl("connect", tolower(subtitle))) %>% 
+    mutate(premium = grepl("premium", tolower(subtitle)) & !grepl("se", tolower(subtitle))) %>% 
+    mutate(premium_se = grepl("premium", tolower(subtitle)) & grepl(" se ", tolower(subtitle))) %>% 
+    mutate(first_edition = grepl("edition", tolower(subtitle)) & grepl(" edition ", tolower(subtitle))) %>% 
+    # slightly round-about way to long-format the trim, any better way I can think of?
+    pivot_longer(cols = c(connect, premium, premium_se, first_edition), names_to = "trim", values_to = "value") %>% 
+    filter(value == TRUE) %>% 
+    select(-value) %>% 
+    filter(model == "Toyota Corolla") %>% 
+    filter(!is.na(year),
+           !trim == "connect",
+           year <= 2021,
+           fuel %in% c("Petrol Hybrid")) %>% 
+    mutate(year = as.character(year)) %>% 
+    ggplot(aes(y = price, x = mileage, color = trim)) +
+    geom_point() +
+    geom_smooth(method = "lm", se = FALSE) +  # Add a trend line
+    facet_wrap(year ~ fuel, ncol = 2) +
+    scale_y_continuous(labels = scales::label_dollar(prefix = "\u00a3"), 
+                       name = "Price") +
+    scale_x_continuous(labels = comma, name = "Mileage (miles)") +
+    labs(title = "Hyundai Ioniq 2nd hand price by mileage, trim and year")
 ```
 
